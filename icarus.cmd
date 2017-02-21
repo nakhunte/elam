@@ -1,10 +1,11 @@
+
 @echo off
 setlocal EnableDelayedExpansion
 
 :: Name: ICARUS.cmd
 :: Author: Mario Espinoza
 :: Created: Feb 12, 2017
-:: Version: 0.1.2 (2017.02.20)
+:: Version: 0.1.3 (2017.02.21)
 
 :: OS Compatibility: Windows {Server 2003-2016, XP, Vista, 7, 8, 10}
 :: Prerequisites: None (the OS platforms listed above have all required 
@@ -16,18 +17,27 @@ setlocal EnableDelayedExpansion
 :: internet diagnostic tools simultaneously, show the running status and
 :: results of the tests, then prompts the user to submit the report to a server
 
+:: Initialize the main variables
+call :InitVariables
+
 :: Check if a parameter was passed and run the test-routine specified
-call :TaskRunner
+call :TaskRunner %1
 
 :: Begin event logging
 call :LogEntry "." "Start Of Event Log"
 
+:: Make it so, number 1
+goto MainProc
 
-:: CONFIGURATION VARIABLES
+
+
+
+:::::::::: CONFIGURATION VARIABLES ::::::::::::::::::::::::::::::::::::::::::::
+:InitVariables
 call :LogEntry "." "Initializing Variables"
 
 :: A comma separated list of commands required by this script (no spaces)
-set CmdApps=findstr,ping,tracertt,pathping,ipconfig,cscript
+set CmdApps=findstr,ping,tracertt,pathping,ipconfig,netstat,cscript
 
 :: Output File Names
 set "ReportName=icarus-report.html" %= Live status and results of tests =%
@@ -38,21 +48,24 @@ call :LogEntry "." "Setting the Sart Timestamp for the Report"
 for /F "delims=" %%a IN ('date /t') DO set myDate=%%a
 for /f "tokens=5 delims=. " %%a in ('echo. ^| time') do (set myTime=%%a)
 set myDate=%mydate:~10,4%-%mydate:~4,2%-%mydate:~7,2%
-set "ScreenTimeStamp=%myDate% @ %myTime%"
+set "ReportTimeStamp=%myDate% @ %myTime%"
 
 :: Others
 set "bang=^!^!^!" %= this makes life easier because ! is a special charecter =%
 				  %= must use setlocal EnableDelayedExpansion and !bang! variable format =%
-set "count=0"
+set "PingReps=-4 -n 16"
+goto:eof
 
 
-:::::::::: MAIN PROCEDURE :::::::::::::::::::::::::::::::::
 
+:::::::::: MAIN PROCEDURE :::::::::::::::::::::::::::::::::::::::::::::::::::::
+:MinProc
 :: Check availability of commands required by this script
 call :TestCmdApps
 
 :: Read the script, find the test routines, and add them to a variable array
 :: *Note: Test-Routines are denoted by Labels with a leading underscore ":_SubRoutine"
+set "count=0"
 for /f "delims=:_ tokens=1" %%a in ('findstr /i /r /c:"^\:_[a-z]" %0') do (
     set /a count+=1 > nul
 	set "Label[!count!]=%%a"
@@ -113,24 +126,32 @@ goto:eof
 
 
 
-:GetPublicIP
-call :MakeVBS > gpip.vbs
-set "count=0"
-for /F "delims=" %%f in ('cscript /nologo gpip.vbs') do (
-    set /a count+=1 > nul
-    set "GetPublicIP[!count!]=%%f"
+:::::::::: SUB-PROCEDURES :::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+:_GetPublicIP
+:: Writ a vbs scrit to get the contents of a webpage showing the public ip address
+:: Save the public ip address to the registry, then echo it out
+call :MakeVBS > wanip.vbs
+set "LineCount=0"
+for /f "skip=3 delims=" %%a in ('cscript wanip.vbs') do (
+	reg add HKCU\Environment /t REG_EXPAND_SZ /v WANIP /d "%%a"
+	echo %%a
 )
-echo !GetPublicIP[1]!
-del /q gpip.vbs
+
+:: To read the WANIP address from the registry, use this command
+:: for /f "skip=3 tokens=3" %%a in ('reg query HKCU\Environment /v WANIP') do (set wanip=%%a)
+del /q wanip.vbs
 goto:eof
 
 
 :_Ping2LocalHost	
+:: This will verify that that the TCP/IP stack is functioning properly
 ping %~1 localhost
 goto:eof
 
 
 :_Ping2LanRouter
+:: This will ping the local router (default gateway) and determine if packet loss is occurring on both the LAN
 ipconfig /all > ipconfig.txt 2>&1
 for /f "tokens=13" %%a in ('ipconfig ^| findstr /i "gateway"') do (set "DG=%%a")
 ping %~1 %DG%
@@ -138,6 +159,7 @@ goto:eof
 
 
 _:Ping2GWC1
+:: GWC1 is physically located in Phoenix, AZ, as of 2017-02-21
 set Gwc1=gwc1.onthenetOffice.com
 set "count=0"
 for /F "delims=" %%f in ('ping %PingReps% %Gwc1%') do (
@@ -151,6 +173,7 @@ goto:eof
 
 
 _:Ping2GWC2
+:: GWC2 is physically located in Ashburn, VA, as of 2017-02-21
 set Gwc2=gwc2.onthenetOffice.com
 set "count=0"
 for /F "delims=" %%f in ('ping %PingReps% %Gwc2%') do (
@@ -164,6 +187,7 @@ goto:eof
 
 
 _:Ping2GWC5
+:: GWC5 is physically located in Irvine, CA, as of 2017-02-21
 set Gwc5=gwc5.onthenetOffice.com
 set "count=0"
 for /F "delims=" %%f in ('ping %PingReps% %Gwc5%') do (
@@ -177,6 +201,7 @@ goto:eof
 
 
 _:Ping2GoogleDNS
+:: The world famouse public DNS node, courtesy of Google
 set GoogleDNS=8.8.4.4
 set "count=0"
 for /F "delims=" %%f in ('start /min ping %PingReps% %GoogleDNS%') do (
@@ -190,6 +215,7 @@ goto:eof
 
 
 _:Ping2Google
+:: Testing the connection to this giant internet service will prove if the connection issue is only with us or to the world
 set Google=play.google.com
 set "count=0"
 for /F "delims=" %%f in ('ping %PingReps% %Google%') do (
@@ -203,6 +229,7 @@ goto:eof
 
 
 _:Ping2Amazon
+:: Testing the connection to this giant internet service will prove if the connection issue is only with us or to the world
 set Amazon=aws.amazon.com
 set "count=0"
 for /F "delims=" %%f in ('ping %PingReps% %Amazon%') do (
@@ -216,6 +243,7 @@ goto:eof
 
 
 :MakeVBS
+:: Creates a VBS script that uses the Windows built-in API to read HTML from any webpage
 set lf=^
 
 
@@ -234,8 +262,8 @@ Set http = Nothing
 goto:eof
 
 
-:: run each command, read the "ErrorLevel", and determine if it's available
 :TestCmdApps
+:: Run each command in the "CmdApps" list, read the "ErrorLevel", and determine if it's available
 call :LogEntry "." "Testing each required command for availability"
 for %%a in (%cmdApps%) do (
 	%%a /? > nul 2>&1
@@ -256,23 +284,10 @@ for %%a in (%cmdApps%) do (
 goto:eof
 
 
-set var1=Hello^^!
-echo "!var1!"
-call :subroutine var1
-goto:eof
-
-:subroutine
-echo !%1!
-exit /b
-
-
 
 :ICARUS_Report
+:: Create an HTML page with the status of the connection tests. This will also be used to transmit the results to an email
 set NumOfTests=%1
-for /L %%n in (1 1 %NumOfTests%) DO (
-  call :GrabTestResults !Label[%%n]!
-)
-goto:eof
 set lf=^
 
 
@@ -318,6 +333,11 @@ set ResultFile=%1.txt
 echo.
 echo Getting running results from: %ResultFile%
 echo.
+set/a LineCount=0 > nul
+echo ^<div class="TestLabel"^>!lf!^
+%TestName% !lf!^
+</div^>!lf!^
+<pre class="console"^>
 
 if exist %ResultFile% (
 	for /F %%a in (%ResultFile%) do (set /a LineCount+=1 > nul)
@@ -332,7 +352,9 @@ if exist %ResultFile% (
 		type %ResultFile%
 	)
 )
-set/a LineCount=0 > nul
+
+echo ^</pre^>
+
 goto:eof
 
 
@@ -351,38 +373,15 @@ echo !string!
 goto:eof
 
 
-echo ^<div class="TestLabel"^>!lf!^
-%TestName% !lf!^
-</div^>!lf!^
-<pre class="console"^>
-
-echo ^</pre^>
-
-
 :TaskRunner
 if [%1] neq [] (
 	call :LogEntry "." "The parameter %1 was passed to this script"
 	call :LogEntry "." "Now performing the %1 procedure"
-	call :_%1 %2> %1.txt
+	call :_%1 > %1.txt
 	call :LogEntry "." "The %1 procedure finished"
 	echo Done > %1.done
-	exit
+	exit /b
 )
 goto:eof
 
-
-::set myColor=f0
-::set errColor=fc
-::color %myColor%
-
-::mode con: cols=90 lines=60
-:: escape the environment variable in the key name
-::set mySysRoot=%%SystemRoot%%
-
-:: 655294544 equals 9999 lines in the GUI
-::reg.exe add "HKCU\Console\%mySysRoot%_system32_cmd.exe" /v ScreenBufferSize /t REG_DWORD /d 655294544 /f
-
-:: We also need to change the Window Height, 3276880 = 50 lines
-::reg.exe add "HKCU\Console\%mySysRoot%_system32_cmd.exe" /v ::WindowSize /t REG_DWORD /d 3276880 /f
-::The next cmd.exe you start has the increase buffer.
 
