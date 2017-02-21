@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 :: Name: ICARUS.cmd
 :: Author: Mario Espinoza
 :: Created: Feb 12, 2017
-:: Version: 0.2 (2017.02.20)
+:: Version: 0.1.2 (2017.02.20)
 
 :: OS Compatibility: Windows {Server 2003-2016, XP, Vista, 7, 8, 10}
 :: Prerequisites: None (the OS platforms listed above have all required 
